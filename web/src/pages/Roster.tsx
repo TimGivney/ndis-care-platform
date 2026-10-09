@@ -16,12 +16,14 @@ interface Form {
   location: string;
   service_type: string;
   instructions: string;
+  support_item_code: string;
+  tasks: string;
 }
 
 const EMPTY: Form = {
   participant_id: "", worker_id: "", date: todayISO(),
   start_time: "09:00", end_time: "12:00", location: "",
-  service_type: "", instructions: "",
+  service_type: "", instructions: "", support_item_code: "", tasks: "",
 };
 
 export default function Roster() {
@@ -82,6 +84,8 @@ export default function Roster() {
         location: form.location || null,
         service_type: form.service_type || null,
         instructions: form.instructions || null,
+        support_item_code: form.support_item_code || null,
+        tasks: form.tasks.split("\n").map((t) => t.trim()).filter(Boolean),
       };
       const r = editing
         ? await put(`/api/shifts/${editing.id}`, payload)
@@ -102,6 +106,14 @@ export default function Roster() {
     load();
   }
 
+  async function manualCheck(s: Shift, kind: "check_in" | "check_out") {
+    const note = prompt(
+      `${kind === "check_in" ? "Check in" : "Check out"} ${s.worker_name} manually? Reason:`) ?? "";
+    await post(`/api/shifts/${s.id}/manual-check`, { kind, note })
+      .catch((e) => alert(e.message));
+    load();
+  }
+
   async function sendOffer(s: Shift, workerId: string) {
     await post(`/api/shifts/${s.id}/offers`, {
       target_worker_id: workerId ? +workerId : null,
@@ -118,6 +130,8 @@ export default function Roster() {
       date: s.date, start_time: s.start_time, end_time: s.end_time,
       location: s.location ?? "", service_type: s.service_type ?? "",
       instructions: s.instructions ?? "",
+      support_item_code: s.support_item_code ?? "",
+      tasks: (s.tasks ?? []).map((t) => t.label).join("\n"),
     });
   }
 
@@ -193,10 +207,22 @@ export default function Roster() {
               <input className={inputCls} value={form.location}
                 onChange={(e) => setForm({ ...form, location: e.target.value })} />
             </Field>
+            <Field label="NDIS item code">
+              <input className={inputCls} value={form.support_item_code}
+                placeholder="e.g. 01_011_0107_1_1"
+                onChange={(e) => setForm({ ...form, support_item_code: e.target.value })} />
+            </Field>
             <div className="sm:col-span-2">
               <Field label="Instructions">
                 <input className={inputCls} value={form.instructions}
                   onChange={(e) => setForm({ ...form, instructions: e.target.value })} />
+              </Field>
+            </div>
+            <div className="sm:col-span-3">
+              <Field label="Shift tasks (one per line)">
+                <textarea className={inputCls} rows={2} value={form.tasks}
+                  placeholder={"Meds prompted\nMeal prepared\nTransport home"}
+                  onChange={(e) => setForm({ ...form, tasks: e.target.value })} />
               </Field>
             </div>
             <div className="flex items-end gap-2 sm:col-span-3">
@@ -223,6 +249,9 @@ export default function Roster() {
                   <div className="text-slate-500">
                     {s.worker_name ?? <span className="font-medium text-red-600">unfilled</span>}
                   </div>
+                  {s.support_item_code && (
+                    <div className="text-slate-400">{s.support_item_code}</div>
+                  )}
                   {s.service_type && <div className="text-slate-400">{s.service_type}</div>}
                   <div className="mt-1 flex items-center justify-between">
                     <Badge tone={statusTone(s.status)}>{s.status.replace("_", " ")}</Badge>
@@ -232,6 +261,14 @@ export default function Roster() {
                           onClick={() => setOffering(offering === s.id ? null : s.id)}>
                           offer
                         </button>
+                        {isManager && s.worker_id && ["scheduled", "confirmed"].includes(s.status) && (
+                          <button className="text-teal-700 hover:underline" title="Manager check-in"
+                            onClick={() => manualCheck(s, "check_in")}>⏱in</button>
+                        )}
+                        {isManager && ["checked_in", "in_progress"].includes(s.status) && (
+                          <button className="text-teal-700 hover:underline" title="Manager check-out"
+                            onClick={() => manualCheck(s, "check_out")}>⏱out</button>
+                        )}
                         <button className="text-teal-700 hover:underline" onClick={() => openEdit(s)}>edit</button>
                         <button className="text-rose-500 hover:underline" onClick={() => cancel(s)}>✕</button>
                       </span>

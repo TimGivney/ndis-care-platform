@@ -9,11 +9,12 @@ from ..auth import (
 )
 from ..db import get_db
 from ..models import (
-    LocationCheck, Participant, Shift, ShiftNote, ShiftOffer, Timesheet, User,
-    Worker, WorkerAvailability,
+    LocationCheck, Participant, Shift, ShiftNote, ShiftOffer, ShiftTask,
+    Timesheet, User, Worker, WorkerAvailability,
 )
 from ..schemas import (
-    CancelIn, CheckInOutIn, NoteIn, OfferIn, ShiftIn, ShiftUpdate,
+    CancelIn, CheckInOutIn, ManualCheckIn, NoteIn, OfferIn, ShiftIn,
+    ShiftUpdate,
 )
 
 router = APIRouter(prefix="/api", tags=["roster"])
@@ -25,12 +26,15 @@ def shift_out(s: Shift) -> dict:
         "start_time": s.start_time, "end_time": s.end_time,
         "location": s.location, "service_type": s.service_type,
         "instructions": s.instructions, "required_skills": s.required_skills,
+        "support_item_code": s.support_item_code,
         "status": s.status,
         "worker_id": s.worker_id,
         "worker_name": s.worker.full_name if s.worker else None,
         "participant_id": s.participant_id,
         "participant_name": s.participant.full_name if s.participant else None,
         "cancel_reason": s.cancel_reason,
+        "tasks": [{"id": t.id, "label": t.label, "done": t.done}
+                  for t in s.tasks],
     }
 
 
@@ -112,7 +116,10 @@ def create_shift(body: ShiftIn, user: User = Depends(require_roles(*MANAGERS)),
         if not w or w.org_id != user.org_id:
             raise HTTPException(400, "Unknown worker")
     s = Shift(org_id=user.org_id, status="scheduled" if body.worker_id else "unfilled",
-              **body.model_dump())
+              **body.model_dump(exclude={"tasks"}))
+    for label in body.tasks:
+        if label.strip():
+            s.tasks.append(ShiftTask(org_id=user.org_id, label=label.strip()))
     warning = _availability_warning(db, s)
     db.add(s)
     db.flush()
@@ -135,12 +142,18 @@ def update_shift(sid: int, body: ShiftUpdate,
                  db: OrmSession = Depends(get_db)):
     s = _get_shift(db, sid, user.org_id)
     old_worker_id = s.worker_id
-    data = body.model_dump(exclude_unset=True)
+    data = body.model_dump(exclude_unset=True, exclude={"tasks"})
     if "status" in data and data["status"] not in (
             "scheduled", "confirmed", "unfilled", "no_show"):
         raise HTTPException(400, "Invalid status change")
     for k, v in data.items():
         setattr(s, k, v)
+    if body.tasks is not None:
+        for t in list(s.tasks):
+            db.delete(t)
+        for label in body.tasks:
+            if label.strip():
+                s.tasks.append(ShiftTask(org_id=user.org_id, label=label.strip()))
     if s.worker_id and s.status == "unfilled":
         s.status = "scheduled"
     warning = _availability_warning(db, s)
@@ -316,6 +329,67 @@ def review_note(nid: int, user: User = Depends(require_roles(*MANAGERS)),
     audit(db, user, "review", "shift_note", nid)
     db.commit()
     return {"note": note_out(n)}
+
+
+# ---------- shift tasks ----------
+
+@router.post("/tasks/{tid}/toggle")
+def toggle_task(tid: int, user: User = Depends(get_current_user),
+                db: OrmSession = Depends(get_db)):
+    t = db.query(ShiftTask).options(joinedload(ShiftTask.shift)).get(tid)
+    if not t or t.org_id != user.org_id:
+        raise HTTPException(404, "Not found")
+    is_manager = user.role in MANAGERS
+    if not is_manager and t.shift.worker_id != user.worker_id:
+        raise HTTPException(403, "Not your shift")
+    t.done = not t.done
+    t.done_at = datetime.utcnow() if t.done else None
+    db.commit()
+    return {"task": {"id": t.id, "label": t.label, "done": t.done}}
+
+
+# ---------- manual check-in (manager, kiosk fallback) ----------
+
+@router.post("/shifts/{sid}/manual-check")
+def manual_check(sid: int, body: ManualCheckIn,
+                 user: User = Depends(require_roles(*MANAGERS)),
+                 db: OrmSession = Depends(get_db)):
+    s = _get_shift(db, sid, user.org_id)
+    if not s.worker_id:
+        raise HTTPException(400, "Shift has no worker")
+    now = datetime.utcnow()
+    if body.kind == "check_in":
+        if s.status in ("cancelled", "completed"):
+            raise HTTPException(400, f"Shift is {s.status}")
+        s.status = "checked_in"
+        db.add(LocationCheck(shift_id=s.id, worker_id=s.worker_id,
+                             kind="check_in"))
+        ts = db.query(Timesheet).filter(Timesheet.shift_id == s.id).first()
+        if not ts:
+            ts = Timesheet(shift_id=s.id, worker_id=s.worker_id,
+                           participant_id=s.participant_id, date=s.date,
+                           scheduled_start=s.start_time,
+                           scheduled_end=s.end_time)
+            db.add(ts)
+        ts.check_in_at = now
+    elif body.kind == "check_out":
+        if s.status not in ("checked_in", "in_progress"):
+            raise HTTPException(400, "Not checked in")
+        s.status = "completed"
+        db.add(LocationCheck(shift_id=s.id, worker_id=s.worker_id,
+                             kind="check_out"))
+        ts = db.query(Timesheet).filter(Timesheet.shift_id == s.id).first()
+        if ts:
+            ts.check_out_at = now
+            if ts.check_in_at:
+                ts.hours = round(
+                    (now - ts.check_in_at).total_seconds() / 3600, 2)
+    else:
+        raise HTTPException(400, "kind must be check_in or check_out")
+    audit(db, user, f"manual_{body.kind}", "shift", sid,
+          body.note or "manual entry by manager")
+    db.commit()
+    return {"shift": shift_out(s)}
 
 
 @router.get("/notes")

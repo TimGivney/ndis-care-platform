@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { useAuth } from "../App";
-import { get, post } from "../lib/api";
+import { get, pendingQueue, post, postOrQueue } from "../lib/api";
 import {
   Participant, Shift, ShiftNote, ShiftOffer, todayISO, Worker,
 } from "../lib/types";
@@ -30,6 +30,8 @@ function ShiftCard({ s, onDone }: { s: Shift; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [offerOpen, setOfferOpen] = useState(false);
+  const [restricted, setRestricted] = useState(false);
+  const [queued, setQueued] = useState(false);
 
   const loadNotes = () =>
     get<{ notes: ShiftNote[] }>(`/api/shifts/${s.id}/notes`)
@@ -40,16 +42,26 @@ function ShiftCard({ s, onDone }: { s: Shift; onDone: () => void }) {
   async function punch(kind: "check-in" | "check-out") {
     setBusy(true);
     const g = await geo();
-    await post(`/api/shifts/${s.id}/${kind}`, g).catch((e) => alert(e.message));
+    const r = await postOrQueue(`/api/shifts/${s.id}/${kind}`, g)
+      .catch((e) => { alert(e.message); return undefined; });
+    if (r === null) setQueued(true);
     setBusy(false);
     onDone();
   }
 
   async function saveNote(submit: boolean) {
     if (!noteText.trim()) return;
-    await post(`/api/shifts/${s.id}/notes`, { body: noteText, submit });
-    setNoteText("");
+    const r = await postOrQueue(`/api/shifts/${s.id}/notes`, {
+      body: noteText, submit, restricted,
+    }).catch((e) => { alert(e.message); return undefined; });
+    if (r === null) setQueued(true);
+    if (r !== undefined) { setNoteText(""); setRestricted(false); }
     loadNotes();
+  }
+
+  async function toggleTask(tid: number) {
+    await post(`/api/tasks/${tid}/toggle`).catch(() => {});
+    onDone();
   }
 
   const actionable = ["scheduled", "confirmed", "checked_in", "in_progress"].includes(s.status);
@@ -69,6 +81,31 @@ function ShiftCard({ s, onDone }: { s: Shift; onDone: () => void }) {
       {s.instructions && (
         <div className="mt-2 rounded bg-slate-50 px-3 py-2 text-sm">
           {s.instructions}
+        </div>
+      )}
+
+      {queued && (
+        <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          📶 Offline — saved locally, will send when back online
+        </div>
+      )}
+
+      {s.tasks?.length > 0 && (
+        <div className="mt-3 rounded-xl bg-teal-50 p-3">
+          <div className="mb-1 text-xs font-medium uppercase tracking-wide text-teal-800">
+            Shift tasks · {s.tasks.filter((t) => t.done).length}/{s.tasks.length}
+          </div>
+          {s.tasks.map((t) => (
+            <label key={t.id}
+              className="flex cursor-pointer items-center gap-2 py-1 text-sm">
+              <input type="checkbox" checked={t.done}
+                onChange={() => toggleTask(t.id)}
+                className="h-4 w-4 accent-teal-600" />
+              <span className={t.done ? "text-slate-400 line-through" : ""}>
+                {t.label}
+              </span>
+            </label>
+          ))}
         </div>
       )}
 
@@ -104,6 +141,7 @@ function ShiftCard({ s, onDone }: { s: Shift; onDone: () => void }) {
             Need a swap?
           </button>
         )}
+        <EmergencyButton pid={s.participant_id} />
       </div>
 
       {offerOpen && (
@@ -120,6 +158,11 @@ function ShiftCard({ s, onDone }: { s: Shift; onDone: () => void }) {
                 <span>{n.worker_name ?? "You"} · v{n.version}</span>
                 <Badge tone={statusTone(n.status)}>{n.status}</Badge>
               </div>
+              {n.restricted && (
+                <span className="mr-1 rounded bg-rose-100 px-1 text-[10px] text-rose-700">
+                  managers only
+                </span>
+              )}
               {n.body}
             </div>
           ))}
@@ -130,6 +173,12 @@ function ShiftCard({ s, onDone }: { s: Shift; onDone: () => void }) {
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
           />
+          <label className="mb-2 flex items-center gap-2 text-xs text-slate-600">
+            <input type="checkbox" checked={restricted}
+              onChange={(e) => setRestricted(e.target.checked)}
+              className="accent-teal-600" />
+            🔒 Managers only (restricted)
+          </label>
           <div className="flex gap-2">
             <Btn kind="ghost" onClick={() => saveNote(false)}>Save draft</Btn>
             <Btn onClick={() => saveNote(true)}>Submit note</Btn>
@@ -261,6 +310,56 @@ function ParticipantBrief({ id }: { id: number }) {
   );
 }
 
+function EmergencyButton({ pid }: { pid: number }) {
+  const [info, setInfo] = useState<Record<string, string | null> | null>(null);
+  const go = async () => {
+    const reason = prompt("Reason for emergency access? (logged)") ?? "";
+    if (reason.trim().length < 5) return;
+    const r = await get<{ emergency: any }>(
+      `/api/participants/${pid}/emergency?reason=${encodeURIComponent(reason)}`)
+      .catch((e) => { alert(e.message); return null; });
+    if (r) setInfo(r.emergency);
+  };
+  return (
+    <>
+      <button className="text-rose-600 hover:underline" onClick={go}>
+        🚨 Emergency info
+      </button>
+      {info && (
+        <div className="mt-3 rounded-xl bg-rose-50 p-3 text-sm">
+          <div className="mb-1 text-xs font-medium uppercase text-rose-700">
+            Emergency access (logged)
+          </div>
+          {Object.entries(info).filter(([, v]) => v).map(([k, v]) => (
+            <div key={k} className="mb-1">
+              <b>{k.replace(/_/g, " ")}:</b> {String(v)}
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+function QueueChip() {
+  const [n, setN] = useState(pendingQueue().length);
+  useEffect(() => {
+    const f = () => setN(pendingQueue().length);
+    window.addEventListener("offline-queue-changed", f);
+    window.addEventListener("online", f);
+    return () => {
+      window.removeEventListener("offline-queue-changed", f);
+      window.removeEventListener("online", f);
+    };
+  }, []);
+  if (!n) return null;
+  return (
+    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+      📶 {n} queued offline
+    </span>
+  );
+}
+
 export default function Today() {
   const { user } = useAuth();
   const [date, setDate] = useState(todayISO());
@@ -275,6 +374,7 @@ export default function Today() {
 
   return (
     <Page title={isWorker ? "My shifts" : "Today's shifts"}>
+      <div className="mb-2 flex justify-end"><QueueChip /></div>
       {isWorker && <OffersSection onDone={load} />}
       <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
         className="mb-4 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm" />

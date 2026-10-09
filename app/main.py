@@ -11,7 +11,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.db import Base, SessionLocal, engine
+from app.db import Base, SessionLocal, engine, migrate
+from app.routers import admin as admin_router
 from app.routers import auth as auth_router
 from app.routers import comms as comms_router
 from app.routers import docs as docs_router
@@ -26,6 +27,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     Base.metadata.create_all(engine)
+    migrate()
     db = SessionLocal()
     try:
         seed_if_empty(db)
@@ -36,6 +38,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="NDIS Care Platform", lifespan=lifespan)
 
+app.include_router(admin_router.router)
 app.include_router(auth_router.router)
 app.include_router(people_router.router)
 app.include_router(roster_router.router)

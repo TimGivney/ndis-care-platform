@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session as OrmSession
 from .auth import hash_password
 from .models import (
     ClientRequest, Incident, Organisation, Participant, Qualification, Shift,
-    User, Worker, WorkerAvailability,
+    ShiftTask, User, Worker, WorkerAvailability,
 )
 
 DEMO_PASSWORD = "demo1234"
@@ -112,19 +112,35 @@ def seed_if_empty(db: OrmSession) -> None:
     today = date.today()
     monday = today - timedelta(days=today.weekday())
 
-    def sh(d_off, w, p, st, en, svc, loc=None, status="scheduled"):
-        return Shift(org_id=org.id, worker_id=w.id if w else None,
-                     participant_id=p.id, date=monday + timedelta(days=d_off),
-                     start_time=st, end_time=en, service_type=svc,
-                     location=loc or p.address, status=status,
-                     instructions="See support plan before starting.")
+    ITEM_CODES = {
+        "Community access": "04_104_0125_6_1",
+        "Personal care": "01_011_0107_1_1",
+        "SIL support": "01_801_0115_1_1",
+        "Meal prep": "01_022_0120_1_1",
+        "Respite": "01_051_0115_1_1",
+    }
+
+    def sh(d_off, w, p, st, en, svc, loc=None, status="scheduled", tasks=()):
+        s = Shift(org_id=org.id, worker_id=w.id if w else None,
+                  participant_id=p.id, date=monday + timedelta(days=d_off),
+                  start_time=st, end_time=en, service_type=svc,
+                  location=loc or p.address, status=status,
+                  instructions="See support plan before starting.",
+                  support_item_code=ITEM_CODES.get(svc))
+        for label in tasks:
+            s.tasks.append(ShiftTask(org_id=org.id, label=label))
+        return s
 
     shifts = [
         sh(0, workers[0], participants[0], "09:00", "12:00", "Community access",
            status="completed" if today.weekday() > 0 else "scheduled"),
-        sh(0, workers[2], participants[1], "08:00", "10:00", "Personal care"),
-        sh(0, workers[1], participants[2], "10:30", "13:00", "SIL support"),
-        sh(1, workers[0], participants[1], "09:00", "11:00", "Meal prep"),
+        sh(0, workers[2], participants[1], "08:00", "10:00", "Personal care",
+           tasks=("Check glucose before breakfast", "Meds prompted",
+                  "Shower assistance")),
+        sh(0, workers[1], participants[2], "10:30", "13:00", "SIL support",
+           tasks=("Visual schedule reviewed", "Skill practice 30 min")),
+        sh(1, workers[0], participants[1], "09:00", "11:00", "Meal prep",
+           tasks=("Meal prepared", "Kitchen tidied")),
         sh(1, workers[1], participants[2], "15:30", "18:00", "Swimming",
            "Newtown Pool"),
         sh(1, workers[3], participants[3], "10:00", "13:00", "Gardening"),

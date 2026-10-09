@@ -10,6 +10,7 @@ import Incidents from "./pages/Incidents";
 import Login from "./pages/Login";
 import Messages from "./pages/Messages";
 import Notes from "./pages/Notes";
+import Settings from "./pages/Settings";
 import ParticipantDetail from "./pages/ParticipantDetail";
 import Participants from "./pages/Participants";
 import Requests from "./pages/Requests";
@@ -40,6 +41,7 @@ const NAV: { href: string; label: string; roles?: User["role"][] }[] = [
   { href: "/requests", label: "Requests" },
   { href: "/timesheets", label: "Timesheets", roles: ["admin", "manager", "worker"] },
   { href: "/audit", label: "Audit Log", roles: ["admin", "manager"] },
+  { href: "/settings", label: "Settings" },
 ];
 
 function NotifBell() {
@@ -221,6 +223,7 @@ export default function App() {
                 <Route path="/requests" component={Requests} />
                 <Route path="/timesheets" component={Timesheets} />
                 <Route path="/audit" component={Audit} />
+                <Route path="/settings" component={Settings} />
                 <Route>
                   <div className="p-8 text-center text-slate-500">Page not found</div>
                 </Route>

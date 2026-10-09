@@ -30,6 +30,9 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(200))
     role: Mapped[str] = mapped_column(String(20))  # admin|manager|worker|participant
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # notification quiet hours, e.g. "21:00"–"07:00"; None = always on
+    quiet_start: Mapped[str | None] = mapped_column(String(5))
+    quiet_end: Mapped[str | None] = mapped_column(String(5))
     # link to domain records when role is worker/participant
     worker_id: Mapped[int | None] = mapped_column(ForeignKey("workers.id"))
     participant_id: Mapped[int | None] = mapped_column(ForeignKey("participants.id"))
@@ -154,6 +157,7 @@ class Shift(Base):
     service_type: Mapped[str | None] = mapped_column(String(100))
     instructions: Mapped[str | None] = mapped_column(Text)
     required_skills: Mapped[str | None] = mapped_column(Text)
+    support_item_code: Mapped[str | None] = mapped_column(String(60))
     status: Mapped[str] = mapped_column(String(20), default="scheduled", index=True)
     # cancellation
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -163,6 +167,21 @@ class Shift(Base):
 
     worker: Mapped[Worker | None] = relationship()
     participant: Mapped[Participant] = relationship()
+    tasks: Mapped[list["ShiftTask"]] = relationship(
+        cascade="all, delete-orphan", order_by="ShiftTask.id")
+
+
+class ShiftTask(Base):
+    __tablename__ = "shift_tasks"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id"), index=True)
+    shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id"), index=True)
+    label: Mapped[str] = mapped_column(String(200))
+    done: Mapped[bool] = mapped_column(Boolean, default=False)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    shift: Mapped[Shift] = relationship()
 
 
 class LocationCheck(Base):

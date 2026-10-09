@@ -73,6 +73,8 @@ class ShiftIn(BaseModel):
     service_type: str | None = None
     instructions: str | None = None
     required_skills: str | None = None
+    support_item_code: str | None = None
+    tasks: list[str] = []
 
 
 class ShiftUpdate(BaseModel):
@@ -85,6 +87,8 @@ class ShiftUpdate(BaseModel):
     service_type: str | None = None
     instructions: str | None = None
     required_skills: str | None = None
+    support_item_code: str | None = None
+    tasks: list[str] | None = None
     status: str | None = None
 
 
@@ -147,6 +151,24 @@ class PostIn(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     body: str = Field(min_length=1, max_length=10000)
     pinned: bool = False
+
+
+class OrgIn(BaseModel):
+    name: str
+    abn: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    address: str | None = None
+
+
+class PrefsIn(BaseModel):
+    quiet_start: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+    quiet_end: str | None = Field(default=None, pattern=r"^\d{2}:\d{2}$")
+
+
+class ManualCheckIn(BaseModel):
+    kind: str  # check_in | check_out
+    note: str | None = None
 
 
 class UserIn(BaseModel):

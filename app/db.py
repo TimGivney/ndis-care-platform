@@ -33,3 +33,20 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def migrate():
+    """Add columns introduced after a table was created (SQLite has no
+    create_all migrations). Safe to run on every boot."""
+    wanted = {
+        "users": [("quiet_start", "VARCHAR(5)"), ("quiet_end", "VARCHAR(5)")],
+        "shifts": [("support_item_code", "VARCHAR(60)")],
+    }
+    with engine.begin() as conn:
+        for table, cols in wanted.items():
+            existing = {r[1] for r in conn.exec_driver_sql(
+                f"PRAGMA table_info({table})")}
+            for name, ddl in cols:
+                if name not in existing:
+                    conn.exec_driver_sql(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")

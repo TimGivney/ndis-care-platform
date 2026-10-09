@@ -17,6 +17,7 @@ def user_out(u: User) -> dict:
         "id": u.id, "name": u.name, "email": u.email, "role": u.role,
         "org_id": u.org_id, "worker_id": u.worker_id,
         "participant_id": u.participant_id,
+        "quiet_start": u.quiet_start, "quiet_end": u.quiet_end,
     }
 
 

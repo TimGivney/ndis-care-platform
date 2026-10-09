@@ -67,12 +67,23 @@ export interface Shift {
   service_type: string | null;
   instructions: string | null;
   required_skills: string | null;
+  support_item_code: string | null;
+  tasks: { id: number; label: string; done: boolean }[];
   status: string;
   worker_id: number | null;
   worker_name: string | null;
   participant_id: number;
   participant_name: string | null;
   cancel_reason: string | null;
+}
+
+export interface Org {
+  id: number;
+  name: string;
+  abn: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
 }
 
 export interface ShiftNote {
