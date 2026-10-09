@@ -34,6 +34,7 @@ export default function Roster() {
   const [fWorker, setFWorker] = useState("");
   const [editing, setEditing] = useState<Shift | null>(null);
   const [creating, setCreating] = useState(false);
+  const [offering, setOffering] = useState<number | null>(null);
   const [form, setForm] = useState<Form>(EMPTY);
   const [warning, setWarning] = useState("");
   const [error, setError] = useState("");
@@ -99,6 +100,13 @@ export default function Roster() {
     const reason = prompt("Cancellation reason?") ?? "";
     await post(`/api/shifts/${s.id}/cancel`, { reason });
     load();
+  }
+
+  async function sendOffer(s: Shift, workerId: string) {
+    await post(`/api/shifts/${s.id}/offers`, {
+      target_worker_id: workerId ? +workerId : null,
+    }).catch((e) => alert(e.message));
+    setOffering(null);
   }
 
   function openEdit(s: Shift) {
@@ -220,11 +228,28 @@ export default function Roster() {
                     <Badge tone={statusTone(s.status)}>{s.status.replace("_", " ")}</Badge>
                     {isManager && s.status !== "cancelled" && s.status !== "completed" && (
                       <span className="space-x-1">
-                        <button className="text-blue-600 hover:underline" onClick={() => openEdit(s)}>edit</button>
-                        <button className="text-red-500 hover:underline" onClick={() => cancel(s)}>✕</button>
+                        <button className="text-teal-700 hover:underline"
+                          onClick={() => setOffering(offering === s.id ? null : s.id)}>
+                          offer
+                        </button>
+                        <button className="text-teal-700 hover:underline" onClick={() => openEdit(s)}>edit</button>
+                        <button className="text-rose-500 hover:underline" onClick={() => cancel(s)}>✕</button>
                       </span>
                     )}
                   </div>
+                  {offering === s.id && (
+                    <div className="mt-1 rounded-lg bg-teal-50 p-1.5">
+                      <select className="w-full rounded border border-teal-200 bg-white px-1 py-1"
+                        defaultValue="pick" autoFocus
+                        onChange={(e) => sendOffer(s, e.target.value)}>
+                        <option value="pick" disabled>Offer to…</option>
+                        <option value="">📢 All workers</option>
+                        {workers.filter((w) => w.id !== s.worker_id).map((w) => (
+                          <option key={w.id} value={w.id}>{w.full_name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               ))}
               {!byDay(d).length && (

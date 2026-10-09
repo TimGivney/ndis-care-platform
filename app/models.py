@@ -311,6 +311,28 @@ class Document(Base):
     uploader: Mapped[User] = relationship(foreign_keys=[uploaded_by])
 
 
+class ShiftOffer(Base):
+    __tablename__ = "shift_offers"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id"), index=True)
+    shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(20))  # offer (manager) | swap (worker)
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    target_worker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workers.id"))  # None = broadcast to all workers
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    # pending|accepted|declined|withdrawn|filled
+    accepted_worker_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workers.id"))
+    responded_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    shift: Mapped[Shift] = relationship()
+    creator: Mapped[User] = relationship(foreign_keys=[created_by])
+    target_worker: Mapped[Worker | None] = relationship(
+        foreign_keys=[target_worker_id])
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(primary_key=True)

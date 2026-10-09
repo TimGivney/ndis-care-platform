@@ -94,6 +94,10 @@ class CheckInOutIn(BaseModel):
     accuracy_m: float | None = None
 
 
+class OfferIn(BaseModel):
+    target_worker_id: int | None = None  # None = broadcast to all workers
+
+
 class CancelIn(BaseModel):
     reason: str | None = None
 

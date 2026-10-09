@@ -202,6 +202,20 @@ export interface Notification {
   created_at: string | null;
 }
 
+export interface ShiftOffer {
+  id: number;
+  shift_id: number;
+  kind: string;
+  status: string;
+  created_by: number;
+  creator_name: string | null;
+  target_worker_id: number | null;
+  target_worker_name: string | null;
+  accepted_worker_id: number | null;
+  created_at: string | null;
+  shift: Shift | null;
+}
+
 export interface Doc {
   id: number;
   owner_type: string;

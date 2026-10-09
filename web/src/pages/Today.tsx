@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 
 import { useAuth } from "../App";
 import { get, post } from "../lib/api";
-import { Participant, Shift, ShiftNote, todayISO } from "../lib/types";
+import {
+  Participant, Shift, ShiftNote, ShiftOffer, todayISO, Worker,
+} from "../lib/types";
 import { Badge, Btn, Card, Page, statusTone } from "../lib/ui";
 
 function geo(): Promise<{ lat?: number; lng?: number; accuracy_m?: number }> {
@@ -27,6 +29,7 @@ function ShiftCard({ s, onDone }: { s: Shift; onDone: () => void }) {
   const [showNotes, setShowNotes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [offerOpen, setOfferOpen] = useState(false);
 
   const loadNotes = () =>
     get<{ notes: ShiftNote[] }>(`/api/shifts/${s.id}/notes`)
@@ -87,15 +90,25 @@ function ShiftCard({ s, onDone }: { s: Shift; onDone: () => void }) {
       )}
 
       <div className="mt-2 flex gap-3 text-sm">
-        <button className="text-blue-600 hover:underline"
+        <button className="text-teal-700 hover:underline"
           onClick={() => setShowNotes(!showNotes)}>
           Notes ({notes.length})
         </button>
-        <button className="text-blue-600 hover:underline"
+        <button className="text-teal-700 hover:underline"
           onClick={() => setExpanded(!expanded)}>
           Client info
         </button>
+        {["scheduled", "confirmed"].includes(s.status) && (
+          <button className="text-teal-700 hover:underline"
+            onClick={() => setOfferOpen(true)}>
+            Need a swap?
+          </button>
+        )}
       </div>
+
+      {offerOpen && (
+        <SwapPicker sid={s.id} onDone={() => { setOfferOpen(false); onDone(); }} />
+      )}
 
       {expanded && <ParticipantBrief id={s.participant_id} />}
 
@@ -123,6 +136,101 @@ function ShiftCard({ s, onDone }: { s: Shift; onDone: () => void }) {
           </div>
         </div>
       )}
+    </Card>
+  );
+}
+
+function SwapPicker({ sid, onDone }: { sid: number; onDone: () => void }) {
+  const { user } = useAuth();
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [target, setTarget] = useState("");
+
+  useEffect(() => {
+    get<{ workers: Worker[] }>("/api/workers")
+      .then((r) => setWorkers(r.workers.filter((w) => w.id !== user?.worker_id)))
+      .catch(() => {});
+  }, []);
+
+  const send = async () => {
+    await post(`/api/shifts/${sid}/offers`, {
+      target_worker_id: target ? +target : null,
+    });
+    onDone();
+  };
+
+  return (
+    <div className="mt-3 rounded-xl bg-teal-50 p-3">
+      <p className="mb-2 text-sm font-medium text-teal-900">
+        Ask someone to take this shift
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          className="rounded-lg border border-teal-200 bg-white px-2 py-1.5 text-sm"
+          value={target}
+          onChange={(e) => setTarget(e.target.value)}
+        >
+          <option value="">Any worker (broadcast)</option>
+          {workers.map((w) => (
+            <option key={w.id} value={w.id}>{w.full_name}</option>
+          ))}
+        </select>
+        <Btn onClick={send}>Send request</Btn>
+        <Btn kind="ghost" onClick={onDone}>Cancel</Btn>
+      </div>
+    </div>
+  );
+}
+
+function OffersSection({ onDone }: { onDone: () => void }) {
+  const [offers, setOffers] = useState<ShiftOffer[]>([]);
+
+  const load = () =>
+    get<{ offers: ShiftOffer[] }>("/api/offers")
+      .then((r) => setOffers(r.offers)).catch(() => {});
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 20000);
+    return () => clearInterval(t);
+  }, []);
+
+  const act = async (o: ShiftOffer, verb: "accept" | "decline") => {
+    await post(`/api/offers/${o.id}/${verb}`).catch((e) => alert(e.message));
+    load();
+    onDone();
+  };
+
+  if (!offers.length) return null;
+  return (
+    <Card className="mb-4 border-amber-200 bg-amber-50">
+      <h2 className="mb-2 font-semibold text-amber-900">
+        🔔 Shift offers ({offers.length})
+      </h2>
+      <div className="space-y-2">
+        {offers.map((o) => (
+          <div key={o.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white p-3 text-sm">
+            <div>
+              <div className="font-medium">
+                {o.shift ? `${o.shift.date} ${o.shift.start_time}–${o.shift.end_time}` : ""}
+                {" · "}{o.shift?.participant_name}
+              </div>
+              <div className="text-xs text-slate-500">
+                {o.kind === "swap"
+                  ? `${o.creator_name} needs cover`
+                  : o.target_worker_id
+                    ? `Offered by ${o.creator_name}`
+                    : `Open shift · posted by ${o.creator_name}`}
+                {o.shift?.location ? ` · ${o.shift.location}` : ""}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Btn kind="success" onClick={() => act(o, "accept")}>Take it</Btn>
+              <Btn kind="ghost" onClick={() => act(o, "decline")}>Decline</Btn>
+            </div>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }
@@ -167,8 +275,9 @@ export default function Today() {
 
   return (
     <Page title={isWorker ? "My shifts" : "Today's shifts"}>
+      {isWorker && <OffersSection onDone={load} />}
       <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
-        className="mb-4 rounded border border-slate-300 px-2 py-1.5 text-sm" />
+        className="mb-4 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm" />
       <div className="space-y-3">
         {shifts.map((s) => <ShiftCard key={s.id} s={s} onDone={load} />)}
         {!shifts.length && (

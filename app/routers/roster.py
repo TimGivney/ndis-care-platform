@@ -9,11 +9,11 @@ from ..auth import (
 )
 from ..db import get_db
 from ..models import (
-    LocationCheck, Participant, Shift, ShiftNote, Timesheet, User, Worker,
-    WorkerAvailability,
+    LocationCheck, Participant, Shift, ShiftNote, ShiftOffer, Timesheet, User,
+    Worker, WorkerAvailability,
 )
 from ..schemas import (
-    CancelIn, CheckInOutIn, NoteIn, ShiftIn, ShiftUpdate,
+    CancelIn, CheckInOutIn, NoteIn, OfferIn, ShiftIn, ShiftUpdate,
 )
 
 router = APIRouter(prefix="/api", tags=["roster"])
@@ -333,6 +333,180 @@ def list_notes(status: str | None = None,
         q = q.filter(ShiftNote.status == status)
     notes = q.order_by(ShiftNote.id.desc()).limit(200).all()
     return {"notes": [note_out(n) for n in notes]}
+
+
+# ---------- shift offers / swaps ----------
+
+def offer_out(o: ShiftOffer) -> dict:
+    s = o.shift
+    return {
+        "id": o.id, "shift_id": o.shift_id, "kind": o.kind,
+        "status": o.status,
+        "created_by": o.created_by,
+        "creator_name": o.creator.name if o.creator else None,
+        "target_worker_id": o.target_worker_id,
+        "target_worker_name": (o.target_worker.full_name
+                               if o.target_worker else None),
+        "accepted_worker_id": o.accepted_worker_id,
+        "created_at": o.created_at.isoformat() if o.created_at else None,
+        "shift": shift_out(s) if s else None,
+    }
+
+
+def _offer_targets(db: OrmSession, org_id: int,
+                   target_worker_id: int | None) -> list[User]:
+    q = db.query(User).filter(
+        User.org_id == org_id, User.worker_id != None,
+        User.is_active == True)
+    if target_worker_id:
+        q = q.filter(User.worker_id == target_worker_id)
+    return q.all()
+
+
+@router.post("/shifts/{sid}/offers")
+def create_offer(sid: int, body: OfferIn,
+                 user: User = Depends(get_current_user),
+                 db: OrmSession = Depends(get_db)):
+    s = _get_shift(db, sid, user.org_id)
+    if s.status in ("cancelled", "completed"):
+        raise HTTPException(400, f"Shift is {s.status}")
+    is_manager = user.role in MANAGERS
+    if is_manager:
+        kind = "offer"
+    else:
+        if s.worker_id != user.worker_id:
+            raise HTTPException(403, "You can only swap your own shifts")
+        kind = "swap"
+    if body.target_worker_id == s.worker_id:
+        raise HTTPException(400, "Worker already has this shift")
+    if body.target_worker_id:
+        w = db.get(Worker, body.target_worker_id)
+        if not w or w.org_id != user.org_id:
+            raise HTTPException(400, "Unknown worker")
+    o = ShiftOffer(org_id=user.org_id, shift_id=s.id, kind=kind,
+                   created_by=user.id, target_worker_id=body.target_worker_id)
+    db.add(o)
+    db.flush()
+    who = f"{s.date} {s.start_time}-{s.end_time} · {s.participant.full_name}"
+    for u in _offer_targets(db, s.org_id, body.target_worker_id):
+        if u.id == user.id:
+            continue
+        title = (f"Shift swap: {user.name} needs cover"
+                 if kind == "swap" else "You're offered a shift")
+        notify(db, s.org_id, u.id, "shift_offer", title, who, "/today")
+    audit(db, user, "create", "shift_offer", o.id, kind)
+    db.commit()
+    return {"offer": offer_out(o)}
+
+
+@router.get("/offers")
+def list_offers(user: User = Depends(get_current_user),
+                db: OrmSession = Depends(get_db)):
+    q = db.query(ShiftOffer).options(
+        joinedload(ShiftOffer.shift).joinedload(Shift.worker),
+        joinedload(ShiftOffer.shift).joinedload(Shift.participant),
+        joinedload(ShiftOffer.creator), joinedload(ShiftOffer.target_worker),
+    ).filter(ShiftOffer.org_id == user.org_id)
+    if user.role == "worker":
+        # pending offers aimed at me or broadcast, on shifts I don't own
+        q = q.filter(
+            ShiftOffer.status == "pending",
+            (ShiftOffer.target_worker_id == user.worker_id) |
+            (ShiftOffer.target_worker_id == None),
+        ).join(Shift, ShiftOffer.shift_id == Shift.id).filter(
+            Shift.worker_id != user.worker_id)
+    offers = q.order_by(ShiftOffer.id.desc()).limit(100).all()
+    return {"offers": [offer_out(o) for o in offers]}
+
+
+@router.post("/offers/{oid}/accept")
+def accept_offer(oid: int, user: User = Depends(get_current_user),
+                 db: OrmSession = Depends(get_db)):
+    o = db.query(ShiftOffer).options(
+        joinedload(ShiftOffer.shift).joinedload(Shift.worker),
+        joinedload(ShiftOffer.shift).joinedload(Shift.participant),
+        joinedload(ShiftOffer.creator), joinedload(ShiftOffer.target_worker),
+    ).get(oid)
+    if not o or o.org_id != user.org_id:
+        raise HTTPException(404, "Not found")
+    if o.status != "pending":
+        raise HTTPException(400, f"Offer is {o.status}")
+    wid = _worker_for_user(user)
+    if o.target_worker_id and o.target_worker_id != wid:
+        raise HTTPException(403, "This offer wasn't for you")
+    s = o.shift
+    if s.status in ("cancelled", "completed"):
+        raise HTTPException(400, f"Shift is {s.status}")
+    if s.worker_id == wid:
+        raise HTTPException(400, "You already have this shift")
+    if o.kind == "offer" and s.worker_id and o.target_worker_id is None:
+        pass  # broadcast offer for a covered shift — still fine to take over
+    giver = s.worker
+    s.worker_id = wid
+    if s.status == "unfilled":
+        s.status = "scheduled"
+    o.status = "accepted"
+    o.accepted_worker_id = wid
+    o.responded_at = datetime.utcnow()
+    others = db.query(ShiftOffer).filter(
+        ShiftOffer.shift_id == s.id, ShiftOffer.status == "pending",
+        ShiftOffer.id != o.id).all()
+    for other in others:
+        other.status = "filled"
+        other.responded_at = datetime.utcnow()
+    who = f"{s.date} {s.start_time}-{s.end_time} · {s.participant.full_name}"
+    notify_managers(db, s.org_id, "offer_accepted",
+                    f"{user.name} took the shift on {who}", None,
+                    "/roster", exclude_user_id=user.id)
+    gu = worker_user(db, giver.id if giver else None)
+    if gu and gu.id != user.id:
+        notify(db, s.org_id, gu.id, "shift_covered",
+               f"{user.name} picked up your shift on {who}", None, "/today")
+    if o.created_by != user.id and (not gu or o.created_by != gu.id):
+        notify(db, s.org_id, o.created_by, "offer_accepted",
+               f"{user.name} accepted your offer for {who}", None, "/today")
+    audit(db, user, "accept", "shift_offer", oid)
+    db.commit()
+    return {"offer": offer_out(o), "shift": shift_out(s)}
+
+
+@router.post("/offers/{oid}/decline")
+def decline_offer(oid: int, user: User = Depends(get_current_user),
+                  db: OrmSession = Depends(get_db)):
+    o = db.get(ShiftOffer, oid)
+    if not o or o.org_id != user.org_id:
+        raise HTTPException(404, "Not found")
+    if o.status != "pending":
+        raise HTTPException(400, f"Offer is {o.status}")
+    wid = _worker_for_user(user)
+    if o.target_worker_id and o.target_worker_id != wid:
+        raise HTTPException(403, "This offer wasn't for you")
+    o.status = "declined"
+    o.responded_at = datetime.utcnow()
+    if o.created_by != user.id:
+        notify(db, o.org_id, o.created_by, "offer_declined",
+               f"{user.name} declined a shift offer",
+               None, "/today" if o.kind == "swap" else "/roster")
+    audit(db, user, "decline", "shift_offer", oid)
+    db.commit()
+    return {"offer": offer_out(o)}
+
+
+@router.post("/offers/{oid}/withdraw")
+def withdraw_offer(oid: int, user: User = Depends(get_current_user),
+                   db: OrmSession = Depends(get_db)):
+    o = db.get(ShiftOffer, oid)
+    if not o or o.org_id != user.org_id:
+        raise HTTPException(404, "Not found")
+    if o.created_by != user.id and user.role not in MANAGERS:
+        raise HTTPException(403, "Not your offer")
+    if o.status != "pending":
+        raise HTTPException(400, f"Offer is {o.status}")
+    o.status = "withdrawn"
+    o.responded_at = datetime.utcnow()
+    audit(db, user, "withdraw", "shift_offer", oid)
+    db.commit()
+    return {"offer": offer_out(o)}
 
 
 # ---------- timesheets ----------
