@@ -7,3 +7,4 @@ data/
 *.db-*
 .env
 .DS_Store
+ndis_care_platform.egg-info/
