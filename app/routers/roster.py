@@ -377,7 +377,7 @@ def create_offer(sid: int, body: OfferIn,
         if s.worker_id != user.worker_id:
             raise HTTPException(403, "You can only swap your own shifts")
         kind = "swap"
-    if body.target_worker_id == s.worker_id:
+    if body.target_worker_id and body.target_worker_id == s.worker_id:
         raise HTTPException(400, "Worker already has this shift")
     if body.target_worker_id:
         w = db.get(Worker, body.target_worker_id)
@@ -414,7 +414,7 @@ def list_offers(user: User = Depends(get_current_user),
             (ShiftOffer.target_worker_id == user.worker_id) |
             (ShiftOffer.target_worker_id == None),
         ).join(Shift, ShiftOffer.shift_id == Shift.id).filter(
-            Shift.worker_id != user.worker_id)
+            (Shift.worker_id == None) | (Shift.worker_id != user.worker_id))
     offers = q.order_by(ShiftOffer.id.desc()).limit(100).all()
     return {"offers": [offer_out(o) for o in offers]}
 
@@ -443,6 +443,7 @@ def accept_offer(oid: int, user: User = Depends(get_current_user),
         pass  # broadcast offer for a covered shift — still fine to take over
     giver = s.worker
     s.worker_id = wid
+    s.worker = db.get(Worker, wid)
     if s.status == "unfilled":
         s.status = "scheduled"
     o.status = "accepted"
