@@ -19,7 +19,7 @@ dev = [
 ]
 
 [project.scripts]
-ndis-server = "app.main:run"
+ndis-server = "main:run"
 
 [build-system]
 requires = ["setuptools>=68"]
