@@ -251,6 +251,66 @@ class Timesheet(Base):
     # pending|confirmed|approved|rejected
 
 
+class Message(Base):
+    __tablename__ = "messages"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id"), index=True)
+    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    recipient_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    body: Mapped[str] = mapped_column(Text)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), index=True)
+
+    sender: Mapped[User] = relationship(foreign_keys=[sender_id])
+    recipient: Mapped[User] = relationship(foreign_keys=[recipient_id])
+
+
+class Post(Base):
+    __tablename__ = "posts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    author: Mapped[User] = relationship()
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str | None] = mapped_column(Text)
+    link: Mapped[str | None] = mapped_column(String(300))
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Document(Base):
+    __tablename__ = "documents"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organisations.id"), index=True)
+    owner_type: Mapped[str] = mapped_column(String(20))  # participant|worker
+    owner_id: Mapped[int] = mapped_column(Integer, index=True)
+    uploaded_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    filename: Mapped[str] = mapped_column(String(300))
+    stored_name: Mapped[str] = mapped_column(String(300))
+    content_type: Mapped[str | None] = mapped_column(String(100))
+    category: Mapped[str | None] = mapped_column(String(60))
+    expires_on: Mapped[date | None] = mapped_column(Date)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    uploader: Mapped[User] = relationship(foreign_keys=[uploaded_by])
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -3,7 +3,10 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session as OrmSession, joinedload
 
-from ..auth import MANAGERS, audit, get_current_user, require_roles
+from ..auth import (
+    MANAGERS, audit, get_current_user, notify, notify_managers,
+    require_roles, worker_user,
+)
 from ..db import get_db
 from ..models import (
     LocationCheck, Participant, Shift, ShiftNote, Timesheet, User, Worker,
@@ -113,6 +116,13 @@ def create_shift(body: ShiftIn, user: User = Depends(require_roles(*MANAGERS)),
     warning = _availability_warning(db, s)
     db.add(s)
     db.flush()
+    if s.worker_id:
+        wu = worker_user(db, s.worker_id)
+        if wu:
+            notify(db, s.org_id, wu.id, "shift_assigned",
+                   f"New shift on {s.date} {s.start_time}-{s.end_time}",
+                   f"{p.full_name} · {s.location or 'see shift details'}",
+                   "/today")
     audit(db, user, "create", "shift", s.id,
           f"{s.date} {s.start_time}-{s.end_time} participant {s.participant_id}")
     db.commit()
@@ -124,6 +134,7 @@ def update_shift(sid: int, body: ShiftUpdate,
                  user: User = Depends(require_roles(*MANAGERS)),
                  db: OrmSession = Depends(get_db)):
     s = _get_shift(db, sid, user.org_id)
+    old_worker_id = s.worker_id
     data = body.model_dump(exclude_unset=True)
     if "status" in data and data["status"] not in (
             "scheduled", "confirmed", "unfilled", "no_show"):
@@ -133,6 +144,14 @@ def update_shift(sid: int, body: ShiftUpdate,
     if s.worker_id and s.status == "unfilled":
         s.status = "scheduled"
     warning = _availability_warning(db, s)
+    if s.worker_id and s.worker_id != old_worker_id:
+        wu = worker_user(db, s.worker_id)
+        if wu:
+            notify(db, s.org_id, wu.id, "shift_assigned",
+                   f"You were assigned a shift on {s.date} "
+                   f"{s.start_time}-{s.end_time}",
+                   f"{s.participant.full_name if s.participant else ''} · "
+                   f"{s.location or 'see shift details'}", "/today")
     audit(db, user, "update", "shift", sid)
     db.commit()
     return {"shift": shift_out(s), "warning": warning}
@@ -147,6 +166,11 @@ def cancel_shift(sid: int, body: CancelIn,
     s.cancelled_at = datetime.utcnow()
     s.cancelled_by = user.id
     s.cancel_reason = body.reason
+    wu = worker_user(db, s.worker_id)
+    if wu and wu.id != user.id:
+        notify(db, s.org_id, wu.id, "shift_cancelled",
+               f"Shift on {s.date} {s.start_time} was cancelled",
+               body.reason, "/today")
     audit(db, user, "cancel", "shift", sid, body.reason)
     db.commit()
     return {"shift": shift_out(s)}
@@ -243,6 +267,11 @@ def create_note(sid: int, body: NoteIn,
         n.submitted_at = datetime.utcnow()
     db.add(n)
     db.flush()
+    if n.status == "submitted":
+        notify_managers(db, s.org_id, "note_submitted",
+                        f"Note from {user.name} for "
+                        f"{s.participant.full_name if s.participant else 'a client'}",
+                        n.body[:200], "/notes", exclude_user_id=user.id)
     audit(db, user, "create", "shift_note", n.id,
           "submitted" if body.submit else "draft")
     db.commit()
@@ -267,6 +296,9 @@ def update_note(nid: int, body: NoteIn,
     if body.submit and n.status == "draft":
         n.status = "submitted"
         n.submitted_at = datetime.utcnow()
+        notify_managers(db, n.shift.org_id, "note_submitted",
+                        f"Note from {user.name}", n.body[:200], "/notes",
+                        exclude_user_id=user.id)
     audit(db, user, "update", "shift_note", nid, f"v{n.version}")
     db.commit()
     return {"note": note_out(n)}

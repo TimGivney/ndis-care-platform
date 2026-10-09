@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
 body {
-  @apply bg-slate-100 text-slate-900 antialiased;
+  @apply text-slate-800 antialiased;
+  background-color: #f0f7f4;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
 }

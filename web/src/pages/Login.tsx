@@ -36,14 +36,16 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-blue-950 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-teal-700 via-emerald-600 to-teal-500 p-4">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl"
+        className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl"
       >
-        <h1 className="mb-1 text-2xl font-bold text-blue-900">CareRoster</h1>
+        <h1 className="mb-1 text-2xl font-bold text-teal-800">
+          CareRoster 💚
+        </h1>
         <p className="mb-4 text-sm text-slate-500">
-          NDIS care &amp; rostering — demo build
+          Friendly care &amp; rostering for NDIS teams
         </p>
         {error && (
           <div className="mb-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -83,7 +85,7 @@ export default function Login() {
                 key={e}
                 type="button"
                 onClick={() => setEmail(e)}
-                className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-700 hover:bg-slate-200"
+                className="rounded-full bg-teal-50 px-2.5 py-1 text-xs text-teal-800 hover:bg-teal-100"
               >
                 {label}
               </button>

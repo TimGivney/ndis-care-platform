@@ -37,3 +37,20 @@ export const post = <T = any>(path: string, body?: unknown) =>
 export const put = <T = any>(path: string, body?: unknown) =>
   api<T>(path, { method: "PUT", body });
 export const del = <T = any>(path: string) => api<T>(path, { method: "DELETE" });
+
+export async function upload<T = any>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    body: form,
+  });
+  if (!res.ok) {
+    let msg = `${res.status}`;
+    try {
+      const j = await res.json();
+      msg = j.detail ?? msg;
+    } catch {}
+    throw new Error(msg);
+  }
+  return res.json();
+}

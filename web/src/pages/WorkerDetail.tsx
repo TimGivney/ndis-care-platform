@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 
 import { del, get, put } from "../lib/api";
+import DocumentsCard from "../lib/DocumentsCard";
 import { Availability, Qualification, WEEKDAYS, Worker } from "../lib/types";
 import { Btn, Card, Field, inputCls, Page } from "../lib/ui";
 
@@ -183,6 +184,10 @@ export default function WorkerDetail() {
         </table>
         {!quals.length && <p className="py-2 text-sm text-slate-500">No qualifications recorded.</p>}
       </Card>
+
+      <div className="mt-4">
+        <DocumentsCard ownerType="worker" ownerId={w.id} canManage />
+      </div>
     </Page>
   );
 }

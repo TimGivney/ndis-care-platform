@@ -6,7 +6,7 @@ from pwdlib import PasswordHash
 from sqlalchemy.orm import Session as OrmSession
 
 from .db import get_db
-from .models import AuditLog, Session, User
+from .models import AuditLog, Notification, Session, User
 
 password_hash = PasswordHash.recommended()
 
@@ -62,6 +62,30 @@ def require_roles(*roles: str):
 
 
 MANAGERS = ("admin", "manager")
+
+
+def notify(db: OrmSession, org_id: int, user_id: int, kind: str, title: str,
+           body: str | None = None, link: str | None = None):
+    db.add(Notification(org_id=org_id, user_id=user_id, kind=kind,
+                        title=title, body=body, link=link))
+
+
+def notify_managers(db: OrmSession, org_id: int, kind: str, title: str,
+                    body: str | None = None, link: str | None = None,
+                    exclude_user_id: int | None = None):
+    users = db.query(User).filter(
+        User.org_id == org_id, User.role.in_(MANAGERS),
+        User.is_active == True).all()
+    for u in users:
+        if u.id != exclude_user_id:
+            notify(db, org_id, u.id, kind, title, body, link)
+
+
+def worker_user(db: OrmSession, worker_id: int | None) -> User | None:
+    if not worker_id:
+        return None
+    return db.query(User).filter(User.worker_id == worker_id,
+                                 User.is_active == True).first()
 
 
 def audit(db: OrmSession, user: User | None, action: str, entity: str,

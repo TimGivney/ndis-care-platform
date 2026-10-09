@@ -3,7 +3,10 @@ from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session as OrmSession, joinedload
 
-from ..auth import MANAGERS, audit, get_current_user, require_roles
+from ..auth import (
+    MANAGERS, audit, get_current_user, notify, notify_managers,
+    require_roles,
+)
 from ..db import get_db
 from ..models import (
     AuditLog, ClientRequest, Incident, Participant, Qualification, Shift,
@@ -113,6 +116,10 @@ def create_incident(body: IncidentIn,
     i = Incident(org_id=user.org_id, reported_by=user.id, **body.model_dump())
     db.add(i)
     db.flush()
+    notify_managers(db, user.org_id, "incident",
+                    f"Incident reported for {p.full_name} ({i.severity})",
+                    i.description[:200], "/incidents",
+                    exclude_user_id=user.id)
     audit(db, user, "create", "incident", i.id, i.severity)
     db.commit()
     return {"incident": incident_out(i)}
@@ -133,6 +140,11 @@ def update_incident(iid: int, body: IncidentUpdate,
 
 
 # ---------- client requests ----------
+
+def p_name(db: OrmSession, pid: int) -> str:
+    p = db.get(Participant, pid)
+    return p.full_name if p else f"participant {pid}"
+
 
 def request_out(r: ClientRequest) -> dict:
     return {
@@ -178,6 +190,9 @@ def create_request(body: RequestIn,
                       kind=body.kind, body=body.body)
     db.add(r)
     db.flush()
+    notify_managers(db, user.org_id, "request",
+                    f"New {r.kind} request for {p_name(db, pid)}",
+                    r.body[:200], "/requests", exclude_user_id=user.id)
     audit(db, user, "create", "client_request", r.id)
     db.commit()
     return {"request": request_out(r)}
@@ -190,8 +205,17 @@ def update_request(rid: int, body: RequestUpdate,
     r = db.get(ClientRequest, rid)
     if not r or r.org_id != user.org_id:
         raise HTTPException(404, "Not found")
+    old_status = r.status
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(r, k, v)
+    if r.status != old_status:
+        pu = db.query(User).filter(
+            User.participant_id == r.participant_id,
+            User.is_active == True).first()
+        if pu:
+            notify(db, r.org_id, pu.id, "request_update",
+                   f"Your {r.kind} request is now {r.status}",
+                   r.response, "/requests")
     audit(db, user, "update", "client_request", rid, body.status)
     db.commit()
     return {"request": request_out(r)}

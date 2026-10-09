@@ -163,6 +163,57 @@ export interface AuditEntry {
   at: string | null;
 }
 
+export interface Message {
+  id: number;
+  sender_id: number;
+  sender_name: string | null;
+  recipient_id: number;
+  recipient_name: string | null;
+  body: string;
+  read_at: string | null;
+  created_at: string | null;
+}
+
+export interface Conversation {
+  user_id: number;
+  name: string;
+  role: string;
+  last_message: Message | null;
+  unread: number;
+}
+
+export interface Post {
+  id: number;
+  title: string;
+  body: string;
+  pinned: boolean;
+  author_name: string | null;
+  author_id: number;
+  created_at: string | null;
+}
+
+export interface Notification {
+  id: number;
+  kind: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  read: boolean;
+  created_at: string | null;
+}
+
+export interface Doc {
+  id: number;
+  owner_type: string;
+  owner_id: number;
+  filename: string;
+  content_type: string | null;
+  category: string | null;
+  expires_on: string | null;
+  uploaded_by: string | null;
+  created_at: string | null;
+}
+
 export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export function todayISO(offset = 0): string {

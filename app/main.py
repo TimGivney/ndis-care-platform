@@ -13,6 +13,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.db import Base, SessionLocal, engine
 from app.routers import auth as auth_router
+from app.routers import comms as comms_router
+from app.routers import docs as docs_router
 from app.routers import ops as ops_router
 from app.routers import people as people_router
 from app.routers import roster as roster_router
@@ -38,6 +40,8 @@ app.include_router(auth_router.router)
 app.include_router(people_router.router)
 app.include_router(roster_router.router)
 app.include_router(ops_router.router)
+app.include_router(comms_router.router)
+app.include_router(docs_router.router)
 
 
 @app.get("/api/health")

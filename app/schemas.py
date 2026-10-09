@@ -134,6 +134,17 @@ class RequestUpdate(BaseModel):
     assigned_to: int | None = None
 
 
+class MessageIn(BaseModel):
+    recipient_id: int
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class PostIn(BaseModel):
+    title: str = Field(min_length=1, max_length=300)
+    body: str = Field(min_length=1, max_length=10000)
+    pinned: bool = False
+
+
 class UserIn(BaseModel):
     name: str
     email: EmailStr

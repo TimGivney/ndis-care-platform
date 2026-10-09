@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useParams } from "wouter";
 
 import { del, get, put } from "../lib/api";
+import DocumentsCard from "../lib/DocumentsCard";
 import { Participant } from "../lib/types";
 import { Badge, Btn, Card, Field, inputCls, Page } from "../lib/ui";
 
@@ -113,6 +114,9 @@ export default function ParticipantDetail() {
           ))}
         </div>
       </Card>
+      <div className="mt-4">
+        <DocumentsCard ownerType="participant" ownerId={p.id} canManage />
+      </div>
     </Page>
   );
 }

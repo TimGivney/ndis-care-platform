@@ -21,7 +21,7 @@ export function Card({ children, className = "" }: {
   className?: string;
 }) {
   return (
-    <div className={`rounded-lg border border-slate-200 bg-white p-4 shadow-sm ${className}`}>
+    <div className={`rounded-2xl border border-teal-100 bg-white p-4 shadow-sm ${className}`}>
       {children}
     </div>
   );
@@ -40,22 +40,22 @@ export function Field({ label, children }: {
 }
 
 export const inputCls =
-  "w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none";
+  "w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm focus:border-teal-500 focus:outline-none";
 
 export function Btn({ children, kind = "primary", ...rest }: {
   children: ReactNode;
   kind?: "primary" | "danger" | "ghost" | "success";
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const styles = {
-    primary: "bg-blue-700 text-white hover:bg-blue-800",
-    danger: "bg-red-600 text-white hover:bg-red-700",
+    primary: "bg-teal-600 text-white hover:bg-teal-700",
+    danger: "bg-rose-500 text-white hover:bg-rose-600",
     success: "bg-emerald-600 text-white hover:bg-emerald-700",
     ghost: "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
   }[kind];
   return (
     <button
       {...rest}
-      className={`rounded px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${styles} ${rest.className ?? ""}`}
+      className={`rounded-full px-4 py-1.5 text-sm font-medium disabled:opacity-50 ${styles} ${rest.className ?? ""}`}
     >
       {children}
     </button>
@@ -71,7 +71,7 @@ export function Badge({ children, tone = "slate" }: {
     green: "bg-emerald-100 text-emerald-800",
     amber: "bg-amber-100 text-amber-800",
     red: "bg-red-100 text-red-800",
-    blue: "bg-blue-100 text-blue-800",
+    blue: "bg-teal-100 text-teal-800",
   }[tone];
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${tones}`}>
