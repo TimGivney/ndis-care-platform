@@ -40,7 +40,7 @@ export default function Requests() {
         <div className="flex flex-wrap gap-2">
           <select className={inputCls + " w-44"} value={kind}
             onChange={(e) => setKind(e.target.value)}>
-            {KINDS.map((k) => <option key={k} value={k}>{k.replace("_", " ")}</option>)}
+            {KINDS.map((k) => <option key={k} value={k}>{k[0].toUpperCase() + k.slice(1).replace("_", " ")}</option>)}
           </select>
           <input className={inputCls + " flex-1"} placeholder="What do you need?"
             value={body} onChange={(e) => setBody(e.target.value)} />

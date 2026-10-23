@@ -5,7 +5,7 @@ import { get, post, put } from "../lib/api";
 import {
   mondayOf, Participant, Shift, todayISO, WEEKDAYS, Worker,
 } from "../lib/types";
-import { Badge, Btn, Card, Field, inputCls, Page, statusTone } from "../lib/ui";
+import { Badge, Btn, Card, Field, inputCls, isoLocal, Page, statusLabel, statusTone } from "../lib/ui";
 
 interface Form {
   participant_id: string;
@@ -44,7 +44,7 @@ export default function Roster() {
   const end = useMemo(() => {
     const d = new Date(weekStart + "T00:00:00");
     d.setDate(d.getDate() + 6);
-    return d.toISOString().slice(0, 10);
+    return isoLocal(d);
   }, [weekStart]);
 
   const load = () =>
@@ -64,13 +64,13 @@ export default function Roster() {
   const days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart + "T00:00:00");
     d.setDate(d.getDate() + i);
-    return d.toISOString().slice(0, 10);
+    return isoLocal(d);
   });
 
   function week(delta: number) {
     const d = new Date(weekStart + "T00:00:00");
     d.setDate(d.getDate() + delta * 7);
-    setWeekStart(d.toISOString().slice(0, 10));
+    setWeekStart(isoLocal(d));
   }
 
   async function submit(e: React.FormEvent) {
@@ -138,7 +138,7 @@ export default function Roster() {
   const byDay = (d: string) => shifts.filter((s) => s.date === d);
 
   return (
-    <Page title="Roster" actions={
+    <Page title={isManager ? "Roster" : "My supports"} actions={
       isManager ? <Btn onClick={() => { setCreating(true); setEditing(null); setForm(EMPTY); }}>+ New shift</Btn> : undefined
     }>
       <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -234,27 +234,27 @@ export default function Roster() {
         </Card>
       )}
 
-      <div className="grid gap-3 md:grid-cols-7">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-7">
         {days.map((d, i) => (
-          <div key={d} className="min-h-24">
-            <div className={`mb-1 text-center text-xs font-semibold uppercase tracking-wide ${d === todayISO() ? "text-blue-700" : "text-slate-500"}`}>
+          <div key={d} className={`md:min-h-24 ${!isManager && !byDay(d).length ? "hidden md:block" : ""}`}>
+            <div className={`mb-1 text-center text-xs font-semibold uppercase tracking-wide ${d === todayISO() ? "text-teal-700" : "text-slate-500"}`}>
               {WEEKDAYS[i]} {new Date(d + "T00:00:00").getDate()}
             </div>
             <div className="space-y-2">
               {byDay(d).map((s) => (
                 <div key={s.id}
-                  className={`rounded-lg border bg-white p-2 text-xs shadow-sm ${s.status === "cancelled" ? "opacity-50" : ""} ${s.status === "unfilled" ? "border-red-300 bg-red-50" : "border-slate-200"}`}>
+                  className={`rounded-xl border bg-white p-3 text-sm shadow-sm md:p-2 md:text-xs ${s.status === "cancelled" ? "opacity-50" : ""} ${s.status === "unfilled" ? "border-red-300 bg-red-50" : "border-slate-200"}`}>
                   <div className="font-semibold">{s.start_time}–{s.end_time}</div>
-                  <div>{s.participant_name}</div>
+                  {isManager && <div>{s.participant_name}</div>}
                   <div className="text-slate-500">
                     {s.worker_name ?? <span className="font-medium text-red-600">unfilled</span>}
                   </div>
-                  {s.support_item_code && (
+                  {isManager && s.support_item_code && (
                     <div className="text-slate-400">{s.support_item_code}</div>
                   )}
                   {s.service_type && <div className="text-slate-400">{s.service_type}</div>}
                   <div className="mt-1 flex items-center justify-between">
-                    <Badge tone={statusTone(s.status)}>{s.status.replace("_", " ")}</Badge>
+                    <Badge tone={statusTone(s.status)}>{statusLabel(s.status)}</Badge>
                     {isManager && s.status !== "cancelled" && s.status !== "completed" && (
                       <span className="space-x-1">
                         <button className="text-teal-700 hover:underline"

@@ -51,8 +51,8 @@ export default function Messages() {
 
   return (
     <Page title="Messages">
-      <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-        <Card className="max-h-[70vh] overflow-y-auto p-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-[260px_1fr]">
+        <Card className={`max-h-[70vh] overflow-y-auto p-2 ${active != null ? "hidden md:block" : ""}`}>
           {convs.map((c) => (
             <button
               key={c.user_id}
@@ -78,7 +78,7 @@ export default function Messages() {
           ))}
         </Card>
 
-        <Card className="flex h-[70vh] flex-col">
+        <Card className={`h-[calc(100dvh-14rem)] flex-col md:h-[70vh] ${active == null ? "hidden md:flex" : "flex"}`}>
           {active == null ? (
             <div className="flex flex-1 items-center justify-center text-slate-400">
               Pick someone on the left to start chatting
@@ -86,6 +86,7 @@ export default function Messages() {
           ) : (
             <>
               <div className="border-b border-slate-100 pb-2 text-sm font-semibold text-teal-900">
+                <button onClick={() => setActive(null)} className="mr-2 font-medium text-teal-700 md:hidden">‹ Back</button>
                 {activeConv?.name}
                 <span className="ml-2 text-xs font-normal text-slate-500">
                   {activeConv?.role}

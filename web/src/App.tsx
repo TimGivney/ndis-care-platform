@@ -1,11 +1,18 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import {
+  Bell, CalendarCheck, CalendarDays, Clock, Ellipsis, HeartHandshake, House, Inbox,
+  LayoutDashboard, LogOut, LucideIcon, Megaphone, MessageCircle, NotebookPen,
+  ScrollText, Settings2, ShieldAlert, Users,
+} from "lucide-react";
 import { Link, Redirect, Route, Switch, useLocation } from "wouter";
 
 import { get, post, User } from "./lib/api";
 import { Notification } from "./lib/types";
+import { Avatar, BrandMark } from "./lib/ui";
 import Audit from "./pages/Audit";
 import Board from "./pages/Board";
 import Dashboard from "./pages/Dashboard";
+import Home from "./pages/Home";
 import Incidents from "./pages/Incidents";
 import Login from "./pages/Login";
 import Messages from "./pages/Messages";
@@ -28,21 +35,6 @@ interface AuthCtx {
 const Auth = createContext<AuthCtx>({ user: null, loading: true, setUser: () => {} });
 export const useAuth = () => useContext(Auth);
 
-const NAV: { href: string; label: string; roles?: User["role"][] }[] = [
-  { href: "/", label: "Dashboard" },
-  { href: "/today", label: "My Shifts", roles: ["worker"] },
-  { href: "/roster", label: "Roster", roles: ["admin", "manager", "participant"] },
-  { href: "/board", label: "Board" },
-  { href: "/messages", label: "Messages" },
-  { href: "/participants", label: "Participants", roles: ["admin", "manager"] },
-  { href: "/workers", label: "Workers", roles: ["admin", "manager"] },
-  { href: "/notes", label: "Notes", roles: ["admin", "manager"] },
-  { href: "/incidents", label: "Incidents" },
-  { href: "/requests", label: "Requests" },
-  { href: "/timesheets", label: "Timesheets", roles: ["admin", "manager", "worker"] },
-  { href: "/audit", label: "Audit Log", roles: ["admin", "manager"] },
-  { href: "/settings", label: "Settings" },
-];
 
 function NotifBell() {
   const [items, setItems] = useState<Notification[]>([]);
@@ -83,13 +75,13 @@ function NotifBell() {
   return (
     <div className="relative" ref={ref}>
       <button
-        className="relative rounded-full bg-teal-700/60 px-2.5 py-1 text-white hover:bg-teal-600"
+        className="relative rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
         onClick={() => setOpen(!open)}
         title="Notifications"
       >
-        🔔
+        <Bell size={20} />
         {unread > 0 && (
-          <span className="absolute -right-1 -top-1 rounded-full bg-rose-500 px-1.5 text-[10px] font-bold">
+          <span className="absolute -right-1 -top-1 rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
             {unread > 9 ? "9+" : unread}
           </span>
         )}
@@ -140,44 +132,159 @@ function NotifBell() {
   );
 }
 
+type NavItem = { href: string; label: string; icon: LucideIcon };
+
+function navFor(role: User["role"]): { main: NavItem[]; more: NavItem[] } {
+  if (role === "worker") return {
+    main: [
+      { href: "/", label: "My shifts", icon: CalendarCheck },
+      { href: "/messages", label: "Messages", icon: MessageCircle },
+      { href: "/board", label: "Board", icon: Megaphone },
+      { href: "/timesheets", label: "Hours", icon: Clock },
+    ],
+    more: [
+      { href: "/incidents", label: "Incidents", icon: ShieldAlert },
+      { href: "/requests", label: "Requests", icon: Inbox },
+      { href: "/settings", label: "Settings", icon: Settings2 },
+    ],
+  };
+  if (role === "participant") return {
+    main: [
+      { href: "/", label: "Home", icon: House },
+      { href: "/roster", label: "My supports", icon: CalendarDays },
+      { href: "/messages", label: "Messages", icon: MessageCircle },
+      { href: "/requests", label: "Requests", icon: Inbox },
+    ],
+    more: [
+      { href: "/board", label: "Board", icon: Megaphone },
+      { href: "/incidents", label: "Incidents", icon: ShieldAlert },
+      { href: "/settings", label: "Settings", icon: Settings2 },
+    ],
+  };
+  return {
+    main: [
+      { href: "/", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/roster", label: "Roster", icon: CalendarDays },
+      { href: "/participants", label: "Participants", icon: HeartHandshake },
+      { href: "/workers", label: "Workers", icon: Users },
+    ],
+    more: [
+      { href: "/today", label: "Today's shifts", icon: CalendarCheck },
+      { href: "/notes", label: "Notes", icon: NotebookPen },
+      { href: "/incidents", label: "Incidents", icon: ShieldAlert },
+      { href: "/requests", label: "Requests", icon: Inbox },
+      { href: "/timesheets", label: "Timesheets", icon: Clock },
+      { href: "/messages", label: "Messages", icon: MessageCircle },
+      { href: "/board", label: "Board", icon: Megaphone },
+      { href: "/audit", label: "Audit log", icon: ScrollText },
+      { href: "/settings", label: "Settings", icon: Settings2 },
+    ],
+  };
+}
+
+const ROLE_LABEL = {
+  admin: "Admin", manager: "Manager", worker: "Support worker", participant: "Participant",
+} as const;
+
 function Layout({ children }: { children: React.ReactNode }) {
   const { user, setUser } = useAuth();
-  const [, navigate] = useLocation();
+  const [loc, navigate] = useLocation();
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => { setMoreOpen(false); }, [loc]);
   if (!user) return null;
-  const nav = NAV.filter((n) => !n.roles || n.roles.includes(user.role));
+  const { main, more } = navFor(user.role);
+  const active = (h: string) => (h === "/" ? loc === "/" : loc === h || loc.startsWith(h + "/"));
+  const moreActive = more.some((n) => active(n.href));
+  const roleLabel = ROLE_LABEL[user.role];
+  const logout = async () => {
+    await post("/api/auth/logout");
+    setUser(null);
+    navigate("/login");
+  };
+
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-10 bg-gradient-to-r from-teal-700 to-emerald-600 text-white shadow">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2">
-          <Link href="/" className="mr-2 text-lg font-bold tracking-tight">
-            CareRoster 💚
+    <div className="min-h-screen sm:flex">
+      <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-slate-200/70 bg-white px-3 py-5 sm:flex">
+        <Link href="/" className="flex items-center gap-2.5 px-2">
+          <BrandMark />
+          <span className="text-[17px] font-semibold tracking-tight text-slate-900">CareRoster</span>
+        </Link>
+        <nav className="mt-7 flex-1 space-y-0.5 overflow-y-auto">
+          {[...main, ...more].map((n) => (
+            <Link key={n.href} href={n.href}
+              className={`flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition ${active(n.href) ? "bg-teal-50 text-teal-800" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"}`}>
+              <n.icon size={18} strokeWidth={active(n.href) ? 2.25 : 1.75} />
+              {n.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="mt-3 flex items-center gap-3 border-t border-slate-100 px-2 pt-4">
+          <Avatar name={user.name} />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium text-slate-900">{user.name}</div>
+            <div className="text-xs text-slate-500">{roleLabel}</div>
+          </div>
+          <button onClick={logout} title="Log out"
+            className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <LogOut size={17} />
+          </button>
+        </div>
+      </aside>
+
+      <div className="min-w-0 flex-1">
+        <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-slate-200/70 bg-white/85 px-4 backdrop-blur sm:justify-end">
+          <Link href="/" className="flex items-center gap-2 sm:hidden">
+            <BrandMark size={28} />
+            <span className="font-semibold tracking-tight text-slate-900">CareRoster</span>
           </Link>
-          <nav className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
-            {nav.map((n) => (
-              <Link key={n.href} href={n.href} className="text-teal-50 hover:text-white hover:underline">
-                {n.label}
-              </Link>
-            ))}
-          </nav>
-          <div className="ml-auto flex items-center gap-3 text-sm">
-            <NotifBell />
-            <span className="text-teal-100">
-              {user.name} · {user.role}
-            </span>
-            <button
-              className="rounded-full bg-teal-800/70 px-3 py-1 hover:bg-teal-800"
-              onClick={async () => {
-                await post("/api/auth/logout");
-                setUser(null);
-                navigate("/login");
-              }}
-            >
-              Log out
+          <NotifBell />
+        </header>
+        <main>{children}</main>
+      </div>
+
+      <nav className="fixed inset-x-0 bottom-0 z-20 flex border-t border-slate-200/80 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+        {main.map((n) => (
+          <Link key={n.href} href={n.href}
+            className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${active(n.href) ? "text-teal-700" : "text-slate-400"}`}>
+            <n.icon size={22} strokeWidth={active(n.href) ? 2.25 : 1.75} />
+            {n.label}
+          </Link>
+        ))}
+        <button onClick={() => setMoreOpen(true)}
+          className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${moreActive ? "text-teal-700" : "text-slate-400"}`}>
+          <Ellipsis size={22} />
+          More
+        </button>
+      </nav>
+
+      {moreOpen && (
+        <div className="fixed inset-0 z-30 bg-slate-900/30 sm:hidden" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-slate-200" />
+            <div className="mb-3 flex items-center gap-3 px-2">
+              <Avatar name={user.name} />
+              <div>
+                <div className="text-sm font-semibold text-slate-900">{user.name}</div>
+                <div className="text-xs text-slate-500">{roleLabel}</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {more.map((n) => (
+                <Link key={n.href} href={n.href}
+                  className={`flex flex-col items-center gap-1.5 rounded-2xl p-3 text-center text-xs font-medium ${active(n.href) ? "bg-teal-50 text-teal-800" : "bg-slate-50 text-slate-600"}`}>
+                  <n.icon size={22} strokeWidth={1.75} />
+                  {n.label}
+                </Link>
+              ))}
+            </div>
+            <button onClick={logout}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl py-3 text-sm font-medium text-rose-600 hover:bg-rose-50">
+              <LogOut size={16} /> Log out
             </button>
           </div>
         </div>
-      </header>
-      <main>{children}</main>
+      )}
     </div>
   );
 }
@@ -209,7 +316,7 @@ export default function App() {
           ) : (
             <Layout>
               <Switch>
-                <Route path="/" component={Dashboard} />
+                <Route path="/" component={user.role === "worker" ? Today : user.role === "participant" ? Home : Dashboard} />
                 <Route path="/today" component={Today} />
                 <Route path="/roster" component={Roster} />
                 <Route path="/board" component={Board} />
